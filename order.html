@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NP อาหารแช่แข็ง - รายการสั่งซื้อ (หลังร้าน)</title>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap" rel="stylesheet">
+    <!-- Firebase SDKs -->
+    <script type="module">
+        // Import Firebase modules ที่จำเป็น
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, query, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+
+        // === START: Firebase Config and Initialization ===
+        // วาง Firebase Config ของคุณที่นี่
+        const firebaseConfig = {
+            apiKey: "AIzaSyAzAJPE2sOsLr7zW1NJxP8SSBO0hBJuSJo",
+            authDomain: "food-order-b419e.firebaseapp.com",
+            projectId: "food-order-b419e",
+            storageBucket: "food-order-b419e.firebasestorage.app",
+            messagingSenderId: "785024452468",
+            appId: "1:785024452468:web:6c159e4bea1f74367c4e21",
+            measurementId: "G-YVP5NPYG08"
+        };
+
+        // ตรวจสอบตัวแปร global ที่ Canvas จัดหาให้ (ถ้ามี)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : firebaseConfig.projectId;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        const providedFirebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : firebaseConfig;
+
+        // Initialize Firebase
+        let app;
+        let db;
+        let auth;
+
+        try {
+            app = initializeApp(providedFirebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+            console.log("Firebase app initialized successfully.");
+            console.log("Current App ID (from order.html):", appId); // เพิ่ม log
+
+            // Sign in anonymously to allow Firestore access (based on rules)
+            async function authenticateFirebase() {
+                try {
+                    if (initialAuthToken) {
+                        await signInAnonymously(auth, initialAuthToken);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                    console.log("Firebase authenticated successfully (anonymous user).");
+                } catch (error) {
+                    console.error("Firebase authentication error:", error);
+                    // alert("เกิดข้อผิดพลาดในการยืนยันตัวตน Firebase กรุณาลองใหม่อีกครั้ง");
+                }
+            }
+            authenticateFirebase();
+
+            // Export Firebase instances for use in other parts of your script if needed
+            window.firebaseApp = app;
+            window.firestoreDb = db;
+            window.firebaseAuth = auth;
+            window.currentAppId = appId;
+
+        } catch (error) {
+            console.error("Error initializing Firebase app:", error);
+            alert("ระบบยังไม่พร้อมใช้งาน (Firebase Init Error) กรุณาตรวจสอบการตั้งค่า Firebase");
+        }
+        // === END: Firebase Config and Initialization ===
+
+    </script>
+    <style>
+        body {
+            font-family: 'Kanit', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #d32f2f;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .order-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .order-card {
+            background-color: #e8f5e9;
+            border: 1px solid #c8e6c9;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+        .order-card h3 {
+            color: #2e7d32;
+            margin-top: 0;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #a5d6a7;
+            padding-bottom: 10px;
+        }
+        .order-card p {
+            margin: 5px 0;
+            line-height: 1.5;
+        }
+        .order-card strong {
+            color: #1b5e20;
+        }
+        .order-card ul {
+            list-style: none;
+            padding: 0;
+            margin: 10px 0;
+        }
+        .order-card ul li {
+            background-color: #f0fdf0;
+            margin-bottom: 3px;
+            padding: 5px 10px;
+            border-radius: 3px;
+        }
+        .no-orders {
+            text-align: center;
+            color: #777;
+            font-size: 1.2em;
+            padding: 50px;
+        }
+        .clear-button {
+            background-color: #f44336;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            display: block;
+            margin: 30px auto 0;
+        }
+        .clear-button:hover {
+            background-color: #d32f2f;
+        }
+        /* Custom Modal Styles (for alert/confirm replacement) */
+        .modal {
+            display: none; /* Hidden by default */
+            position: fixed; /* Stay in place */
+            z-index: 1; /* Sit on top */
+            left: 0;
+            top: 0;
+            width: 100%; /* Full width */
+            height: 100%; /* Full height */
+            overflow: auto; /* Enable scroll if needed */
+            background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto; /* 15% from the top and centered */
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%; /* Could be more or less, depending on screen size */
+            max-width: 400px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            text-align: center;
+            font-family: 'Kanit', sans-serif;
+        }
+        .modal-content p {
+            margin-bottom: 20px;
+            font-size: 1.1em;
+        }
+        .modal-buttons button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 0 10px;
+            font-size: 1em;
+            transition: background-color 0.3s ease;
+        }
+        .modal-buttons button.cancel {
+            background-color: #f44336;
+        }
+        .modal-buttons button:hover {
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>รายการสั่งซื้อทั้งหมด (หลังร้าน)</h1>
+        <div id="order-list" class="order-list">
+            <!-- Orders will be loaded here -->
+        </div>
+        <div id="no-orders" class="no-orders" style="display: none;">
+            ไม่มีรายการสั่งซื้อในระบบ
+        </div>
+        <button id="clear-orders" class="clear-button">ล้างรายการสั่งซื้อทั้งหมด</button>
+    </div>
+
+    <!-- Custom Confirmation Modal -->
+    <div id="confirmModal" class="modal">
+        <div class="modal-content">
+            <p id="modalMessage"></p>
+            <div class="modal-buttons">
+                <button id="modalConfirmBtn">ยืนยัน</button>
+                <button id="modalCancelBtn" class="cancel">ยกเลิก</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { collection, onSnapshot, query, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js"; // อัปเดตเวอร์ชัน SDK
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // ตรวจสอบว่า Firebase ถูก initialize แล้ว
+            if (!window.firestoreDb || !window.currentAppId) {
+                console.error("Firebase is not initialized. Please ensure Firebase config is set correctly.");
+                alert("ระบบยังไม่พร้อมใช้งาน (Firebase Not Ready) กรุณาตรวจสอบการตั้งค่า Firebase"); // เปลี่ยนข้อความ alert เพื่อให้ระบุปัญหาได้ชัดเจนขึ้น
+                return;
+            }
+
+            const db = window.firestoreDb;
+            const appId = window.currentAppId;
+            const ordersCollectionPath = `artifacts/${appId}/public/data/orders`; // สร้าง path
+            const ordersCollectionRef = collection(db, ordersCollectionPath);
+            console.log("Attempting to listen to path:", ordersCollectionPath); // เพิ่ม log
+
+            const orderListDiv = document.getElementById('order-list');
+            const noOrdersMessage = document.getElementById('no-orders');
+            const clearOrdersButton = document.getElementById('clear-orders');
+
+            // Modal elements
+            const confirmModal = document.getElementById('confirmModal');
+            const modalMessage = document.getElementById('modalMessage');
+            const modalConfirmBtn = document.getElementById('modalConfirmBtn');
+            const modalCancelBtn = document.getElementById('modalCancelBtn');
+
+            // Function to show custom confirmation modal
+            function showConfirmModal(message) {
+                return new Promise((resolve) => {
+                    modalMessage.textContent = message;
+                    confirmModal.style.display = 'block';
+
+                    const onConfirm = () => {
+                        confirmModal.style.display = 'none';
+                        modalConfirmBtn.removeEventListener('click', onConfirm);
+                        modalCancelBtn.removeEventListener('click', onCancel);
+                        resolve(true);
+                    };
+
+                    const onCancel = () => {
+                        confirmModal.style.display = 'none';
+                        modalConfirmBtn.removeEventListener('click', onConfirm);
+                        modalCancelBtn.removeEventListener('click', onCancel);
+                        resolve(false);
+                    };
+
+                    modalConfirmBtn.addEventListener('click', onConfirm);
+                    modalCancelBtn.addEventListener('click', onCancel);
+                });
+            }
+
+            // Real-time listener for orders
+            onSnapshot(query(ordersCollectionRef), (snapshot) => {
+                const orders = [];
+                snapshot.forEach(doc => {
+                    orders.push({ id: doc.id, ...doc.data() });
+                });
+                renderOrders(orders);
+            }, (error) => {
+                console.error("Error fetching real-time orders:", error);
+                // alert("เกิดข้อผิดพลาดในการดึงข้อมูลคำสั่งซื้อแบบเรียลไทม์"); // ใช้ alert ชั่วคราว
+            });
+
+
+            function renderOrders(orders) {
+                orderListDiv.innerHTML = ''; // Clear existing orders
+                // Sort orders by timestamp descending (newest first)
+                orders.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+                if (orders.length === 0) {
+                    noOrdersMessage.style.display = 'block';
+                    clearOrdersButton.style.display = 'none';
+                    return;
+                } else {
+                    noOrdersMessage.style.display = 'none';
+                    clearOrdersButton.style.display = 'block';
+                }
+
+                orders.forEach(order => {
+                    const orderCard = document.createElement('div');
+                    orderCard.classList.add('order-card');
+
+                    let itemsHtml = '<ul>';
+                    order.items.forEach(item => {
+                        itemsHtml += `<li>${item.name} x ${item.quantity} (${item.price * item.quantity} บาท)</li>`;
+                    });
+                    itemsHtml += '</ul>';
+
+                    orderCard.innerHTML = `
+                        <h3>Order ID: ${order.id}</h3>
+                        <p><strong>วันที่/เวลา:</strong> ${order.timestamp}</p>
+                        <p><strong>ชื่อ-นามสกุล:</strong> ${order.customer.name}</p>
+                        <p><strong>เบอร์โทรศัพท์:</strong> ${order.customer.tel}</p>
+                        <p><strong>ที่อยู่จัดส่ง:</strong> ${order.customer.address}</p>
+                        ${order.customer.room ? `<p><strong>ห้อง/เลขที่:</strong> ${order.customer.room}</p>` : ''}
+                        ${order.customer.floor ? `<p><strong>ชั้น:</strong> ${order.customer.floor}</p>` : ''}
+                        <p><strong>รายการอาหาร:</strong></p>
+                        ${itemsHtml}
+                        <p><strong>รวมทั้งหมด:</strong> ${order.totalAmount} บาท</p>
+                        <p><strong>สลิปหลักฐาน:</strong> ${order.slipFileName}</p>
+                        <p style="font-size:0.9em; color:#888;">(ในระบบจริงจะสามารถเปิดดูรูปภาพได้)</p>
+                    `;
+                    orderListDiv.appendChild(orderCard);
+                });
+            }
+
+            clearOrdersButton.addEventListener('click', async () => {
+                const confirmed = await showConfirmModal('คุณต้องการล้างรายการสั่งซื้อทั้งหมดใช่หรือไม่?');
+                if (confirmed) {
+                    try {
+                        const querySnapshot = await getDocs(ordersCollectionRef);
+                        const deletePromises = [];
+                        querySnapshot.forEach((doc) => {
+                            deletePromises.push(deleteDoc(doc.ref));
+                        });
+                        await Promise.all(deletePromises);
+                        alert('ล้างรายการสั่งซื้อเรียบร้อยแล้ว'); // ใช้ alert แทน confirm
+                    } catch (e) {
+                        console.error("Error clearing orders: ", e);
+                        alert("เกิดข้อผิดพลาดในการล้างรายการสั่งซื้อ");
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
